@@ -346,7 +346,7 @@ if master is not None:
         st.caption("Across 2022–2024 (a down market year plus two up years), most executives still kept a "
                    "substantial bonus when shareholders lost money; the bonus dropped only about a third. "
                    "Performance data exists only for these three years, so this is a short-window check, "
-                   "not an 18-year structural claim.")
+                   )
 
     j = f.merge(master["tsr_lookup"], left_on=["company", "year"], right_on=["name", "year"], how="left")
     bad = j[(j["achievement"] >= ACHIEVE_HIT) & (j["tsr"] < 0)].copy()
