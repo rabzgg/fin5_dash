@@ -314,7 +314,7 @@ if master is not None:
     st.markdown("### Reality check: is this just a fluke of 2023–2024?")
     st.markdown(
         "*Two checks against the master database. Shareholder-return data only covers 2022–2024 "
-        "(a down market year plus two up years), so this is a short-window check, not an 18-year claim.*")
+        "(a down market year plus two up years)*")
 
     r1, r2 = st.columns(2)
 
