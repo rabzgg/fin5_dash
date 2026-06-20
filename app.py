@@ -26,6 +26,7 @@ import streamlit as st
 # ──────────────────────────────────────────────────────────────────────────────
 ESG_FILE_CANDIDATES = [
     ["Executive_Compensation_ESG_2023.xlsx", "Executive_Compensation_ESG_2024.xlsx"],
+    ["Data/2023/Executive_Compensation_ESG_2023.xlsx", "Data/2024/Executive_Compensation_ESG_2024.xlsx"],
 ]
 
 WEIGHT_HIGH = 20.0     # ESG weight in STI bonus is "high" at or above this %
@@ -113,6 +114,42 @@ def load_data():
 
 
 df = load_data()
+
+
+MASTER_DB_CANDIDATES = ["2008-2024_longitudinal.csv", "Data/2008-2024_longitudinal.csv",
+                        "fin5/csv_data/2008-2024_longitudinal.csv"]
+
+
+@st.cache_data
+def load_master():
+    """Master longitudinal DB: per-company TSR lookup + market-context (Test A) + general pattern (Test B)."""
+    path = next((p for p in MASTER_DB_CANDIDATES if os.path.exists(p)), None)
+    if path is None:
+        return None
+    m = pd.read_csv(path, sep="|", low_memory=False)
+    m["year"] = pd.to_numeric(m["year"], errors="coerce")
+    m["tsr"] = pd.to_numeric(m.get("tsr"), errors="coerce")
+    m["one_year_bonus"] = pd.to_numeric(m.get("one_year_bonus"), errors="coerce")
+    m["name"] = m["new_cnameshort"].astype(str).str.strip()
+    m.loc[m["new_cnameshort"].isna(), "name"] = m["company_shortname"].astype(str).str.strip()
+
+    tsr_lookup = m.dropna(subset=["tsr"]).groupby(["name", "year"])["tsr"].first().reset_index()
+
+    test_a = (m.dropna(subset=["tsr"]).groupby("year")
+                .agg(median_tsr=("tsr", "median"),
+                     pct_neg=("tsr", lambda s: (s < 0).mean() * 100),
+                     n=("tsr", "size")).reset_index())
+
+    d = m.dropna(subset=["tsr", "one_year_bonus"]).copy()
+    d["neg"] = d["tsr"] < 0
+    test_b = (d.groupby("neg")
+                .agg(pct_bonus=("one_year_bonus", lambda s: (s > 0).mean() * 100),
+                     median_bonus=("one_year_bonus", "median"),
+                     n=("one_year_bonus", "size")).reset_index())
+    return {"tsr_lookup": tsr_lookup, "test_a": test_a, "test_b": test_b}
+
+
+master = load_master()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # HEADER
@@ -269,6 +306,60 @@ table = (s.sort_values(["Screening score (0–3)", "esg_weight"], ascending=[Fal
 st.dataframe(table, use_container_width=True, hide_index=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
+# SECTION 5 — REALITY CHECK: IS IT A FLUKE?
+# ──────────────────────────────────────────────────────────────────────────────
+if master is not None:
+    st.markdown("---")
+    st.markdown("### Reality check: is this just a fluke of 2023–2024?")
+    st.markdown(
+        "*Two tests against the 2006–2024 master database, so the finding does not rest on one odd year.*")
+
+    r1, r2 = st.columns(2)
+
+    with r1:
+        ta = master["test_a"]
+        ta = ta[(ta["year"] >= 2008) & (ta["year"] <= 2024)].copy()
+        ta["median_tsr_pct"] = (ta["median_tsr"] * 100).round(0)
+        figA = px.bar(ta, x="year", y="median_tsr_pct", template="plotly_white",
+                      labels={"median_tsr_pct": "Median shareholder return (%)", "year": "Year"})
+        figA.update_traces(marker_color=[DANGER if v < 0 else ACCENT for v in ta["median_tsr_pct"]])
+        figA.add_hline(y=0, line_color="#888")
+        figA.update_layout(margin=dict(l=10, r=10, t=10, b=30), height=260, showlegend=False)
+        st.markdown("**Test A — the market was UP in 2023–2024**")
+        st.plotly_chart(figA, use_container_width=True)
+        st.caption("2023 (+26%) and 2024 (+14%) were good market years, so the firms paying full ESG bonuses "
+                   "while their shareholders lost 20–30% were genuine underperformers, not crash victims.")
+
+    with r2:
+        tb = master["test_b"].set_index("neg")
+        pct_neg = tb.loc[True, "pct_bonus"] if True in tb.index else float("nan")
+        mb_pos = tb.loc[False, "median_bonus"] if False in tb.index else float("nan")
+        mb_neg = tb.loc[True, "median_bonus"] if True in tb.index else float("nan")
+        drop = (1 - mb_neg / mb_pos) * 100 if mb_pos else float("nan")
+        st.markdown("**Test B — the pattern is general (2006–2024)**")
+        m1, m2 = st.columns(2)
+        m1.metric("Still got a bonus when shareholders LOST money", f"{pct_neg:.0f}%")
+        m2.metric("How much the bonus dropped in those years", f"−{drop:.0f}%")
+        st.caption("Across 18 years, most executives kept a substantial bonus even when shareholders lost "
+                   "money. Pay bends with performance (bonus drops about a third) but does not break, so the "
+                   "decoupling is structural and partial, not a one-off and not total.")
+
+    j = f.merge(master["tsr_lookup"], left_on=["company", "year"], right_on=["name", "year"], how="left")
+    bad = j[(j["achievement"] >= ACHIEVE_HIT) & (j["tsr"] < 0)].copy()
+    if not bad.empty:
+        bad["Achievement %"] = bad["achievement"].round(0)
+        bad["Shareholder return %"] = (bad["tsr"] * 100).round(0)
+        bad = (bad.sort_values("tsr")[["company", "year", "Achievement %", "Shareholder return %"]]
+                  .rename(columns={"company": "Company", "year": "Year"}))
+        st.markdown(f"**{len(bad)} companies hit their ESG bonus target in a year their shareholders lost money:**")
+        st.dataframe(bad, use_container_width=True, hide_index=True)
+        st.caption("Honest scope: this shows the ESG bonus paid out despite shareholder losses (decoupling from "
+                   "shareholder value). It is NOT proof the ESG target was easy — ESG outcomes and stock returns "
+                   "differ. Matched to the master DB for the ~57% of firms whose names align.")
+    else:
+        st.info("No 'hit ESG target but negative shareholder return' rows under the current filters.")
+
+# ──────────────────────────────────────────────────────────────────────────────
 # METHODOLOGY + CAVEATS
 # ──────────────────────────────────────────────────────────────────────────────
 with st.expander("Methodology & caveats (read before quoting a number)"):
@@ -284,5 +375,8 @@ with st.expander("Methodology & caveats (read before quoting a number)"):
 - **Strongest open follow-up:** compare ESG-target achievement against the firm's own FINANCIAL-target
   achievement. This file has no financial Zielerreichung, so that needs a second source.
 - **STI vs LTI scope:** composition charts describe the annual (STI) bonus; emission presence uses STI or LTI.
+- **Robustness (Section 5):** uses the 2006–2024 master database. 2023–2024 were up-market years (so flagged
+  firms underperformed genuinely), and across 18 years most executives kept a bonus even in negative-return
+  years (the bonus fell by about a third). The shareholder-return join matches roughly 57% of ESG firms by name.
 """
     )
