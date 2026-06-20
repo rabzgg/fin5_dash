@@ -135,7 +135,8 @@ def load_master():
 
     tsr_lookup = m.dropna(subset=["tsr"]).groupby(["name", "year"])["tsr"].first().reset_index()
 
-    test_a = (m.dropna(subset=["tsr"]).groupby("year")
+    co = m.dropna(subset=["tsr"]).drop_duplicates(["name", "year"])   # TSR is per company, repeated per exec
+    test_a = (co.groupby("year")
                 .agg(median_tsr=("tsr", "median"),
                      pct_neg=("tsr", lambda s: (s < 0).mean() * 100),
                      n=("tsr", "size")).reset_index())
@@ -328,8 +329,9 @@ if master is not None:
         figA.update_layout(margin=dict(l=10, r=10, t=10, b=30), height=260, showlegend=False)
         st.markdown("**Test A — the market was UP in 2023–2024**")
         st.plotly_chart(figA, use_container_width=True)
-        st.caption("2023 (+26%) and 2024 (+14%) were good market years, so the firms paying full ESG bonuses "
-                   "while their shareholders lost 20–30% were genuine underperformers, not crash victims.")
+        st.caption("2023 (+23%) and 2024 (+13%) were good market years — matching the actual DAX total return "
+                   "(+20% and +18%) — so firms paying full ESG bonuses while their shareholders lost 20–30% "
+                   "were genuine underperformers, not crash victims. Covers ~40 large-cap firms per year.")
 
     with r2:
         tb = master["test_b"].set_index("neg")
@@ -342,7 +344,9 @@ if master is not None:
         m1.metric("Still got a bonus when shareholders LOST money", f"{pct_neg:.0f}%")
         m2.metric("How much the bonus dropped in those years", f"−{drop:.0f}%")
         st.caption("Across 2022–2024 (a down market year plus two up years), most executives still kept a "
-                   "substantial bonus when shareholders lost money; the bonus dropped only about a third. ")
+                   "substantial bonus when shareholders lost money; the bonus dropped only about a third. "
+                   "Performance data exists only for these three years, so this is a short-window check, "
+                   "not an 18-year structural claim.")
 
     j = f.merge(master["tsr_lookup"], left_on=["company", "year"], right_on=["name", "year"], how="left")
     bad = j[(j["achievement"] >= ACHIEVE_HIT) & (j["tsr"] < 0)].copy()
@@ -376,8 +380,10 @@ with st.expander("Methodology & caveats (read before quoting a number)"):
   achievement. This file has no financial Zielerreichung, so that needs a second source.
 - **STI vs LTI scope:** composition charts describe the annual (STI) bonus; emission presence uses STI or LTI.
 - **Robustness (Section 5):** the master database's shareholder-return data only covers 2022–2024, so the
-  robustness window is three years (one down market year, two up), not 18. 2023–2024 were up years, so the
-  flagged firms underperformed genuinely. In that window most executives kept a bonus even in negative-return
-  years (the bonus fell about a third). The shareholder-return join matches roughly 57% of ESG firms by name.
+  robustness window is three years (one down market year, two up), not 18. Our per-year medians (2022 −8%,
+  2023 +23%, 2024 +13%) match the actual DAX total returns (−13%, +20%, +18%), confirming the year labels are
+  correct. Performance covers ~40 large-cap firms per year (TSR is per company, deduplicated from per-exec
+  rows). In that window most executives kept a bonus even in negative-return years (the bonus fell about a
+  third). The shareholder-return join matches roughly 57% of ESG firms by name.
 """
     )
