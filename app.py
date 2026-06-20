@@ -312,7 +312,8 @@ if master is not None:
     st.markdown("---")
     st.markdown("### Reality check: is this just a fluke of 2023–2024?")
     st.markdown(
-        "*Two tests against the 2006–2024 master database, so the finding does not rest on one odd year.*")
+        "*Two checks against the master database. Shareholder-return data only covers 2022–2024 "
+        "(a down market year plus two up years), so this is a short-window check, not an 18-year claim.*")
 
     r1, r2 = st.columns(2)
 
@@ -336,13 +337,14 @@ if master is not None:
         mb_pos = tb.loc[False, "median_bonus"] if False in tb.index else float("nan")
         mb_neg = tb.loc[True, "median_bonus"] if True in tb.index else float("nan")
         drop = (1 - mb_neg / mb_pos) * 100 if mb_pos else float("nan")
-        st.markdown("**Test B — the pattern is general (2006–2024)**")
+        st.markdown("**Test B — in 2022–2024 (one down year + two up years)**")
         m1, m2 = st.columns(2)
         m1.metric("Still got a bonus when shareholders LOST money", f"{pct_neg:.0f}%")
         m2.metric("How much the bonus dropped in those years", f"−{drop:.0f}%")
-        st.caption("Across 18 years, most executives kept a substantial bonus even when shareholders lost "
-                   "money. Pay bends with performance (bonus drops about a third) but does not break, so the "
-                   "decoupling is structural and partial, not a one-off and not total.")
+        st.caption("Across 2022–2024 (a down market year plus two up years), most executives still kept a "
+                   "substantial bonus when shareholders lost money; the bonus dropped only about a third. "
+                   "Performance data exists only for these three years, so this is a short-window check, "
+                   "not an 18-year structural claim.")
 
     j = f.merge(master["tsr_lookup"], left_on=["company", "year"], right_on=["name", "year"], how="left")
     bad = j[(j["achievement"] >= ACHIEVE_HIT) & (j["tsr"] < 0)].copy()
@@ -375,8 +377,9 @@ with st.expander("Methodology & caveats (read before quoting a number)"):
 - **Strongest open follow-up:** compare ESG-target achievement against the firm's own FINANCIAL-target
   achievement. This file has no financial Zielerreichung, so that needs a second source.
 - **STI vs LTI scope:** composition charts describe the annual (STI) bonus; emission presence uses STI or LTI.
-- **Robustness (Section 5):** uses the 2006–2024 master database. 2023–2024 were up-market years (so flagged
-  firms underperformed genuinely), and across 18 years most executives kept a bonus even in negative-return
-  years (the bonus fell by about a third). The shareholder-return join matches roughly 57% of ESG firms by name.
+- **Robustness (Section 5):** the master database's shareholder-return data only covers 2022–2024, so the
+  robustness window is three years (one down market year, two up), not 18. 2023–2024 were up years, so the
+  flagged firms underperformed genuinely. In that window most executives kept a bonus even in negative-return
+  years (the bonus fell about a third). The shareholder-return join matches roughly 57% of ESG firms by name.
 """
     )
