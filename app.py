@@ -326,7 +326,7 @@ with tab_fluke:
     else:
         st.markdown(
             "*Two checks against the master database. Shareholder-return data covers 2022–2024 "
-            "(one down market year, two up), so this is a short-window check, not an 18-year claim.*")
+            "(one down market year, two up), so this is a short-window check*")
         r1, r2 = st.columns(2)
         with r1:
             ta = master["test_a"]
@@ -353,7 +353,7 @@ with tab_fluke:
             m1.metric("Still got a bonus when shareholders LOST money", f"{pct_neg:.0f}%")
             m2.metric("How much the bonus dropped in those years", f"−{drop:.0f}%")
             st.caption("Most executives kept a substantial bonus even when shareholders lost money; the bonus "
-                       "dropped only about a third. Three-year window, not an 18-year structural claim.")
+                       "dropped only about a third.")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # METHODOLOGY + CAVEATS
