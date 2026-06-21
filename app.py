@@ -156,11 +156,7 @@ master = load_master()
 # HEADER
 # ──────────────────────────────────────────────────────────────────────────────
 st.title("ESG Pay Reality Check")
-st.subheader("ESG-linked bonuses are now standard. But are the targets a genuine stretch?")
-st.caption(
-    "A screening tool on ESG-linked executive pay (DSW data, 2023–2024). It flags packages worth "
-    "scrutinising and is honest about what it can and cannot show. Read every flag as a question, not a verdict."
-)
+st.caption("ESG-linked executive pay — DSW data, 2023–2024. A screening tool, not a verdict.")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
@@ -177,79 +173,91 @@ if f.empty:
     st.stop()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SECTION 1 — THE CLAIM
+# SHARED COMPUTATIONS (used by hero + tabs)
 # ──────────────────────────────────────────────────────────────────────────────
-st.markdown("---")
-st.markdown("### The claim: boards tie pay to ESG")
-
-w  = f["esg_weight"].dropna()
-a  = f["achievement"].dropna()
+a = f["achievement"].dropna()
+w = f["esg_weight"].dropna()
 e_any = f["emission_any"].dropna()
+median_ach = a.median() if len(a) else float("nan")
+hit_rate = (a >= ACHIEVE_HIT).mean() * 100 if len(a) else float("nan")
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Avg ESG weight in bonus",
-          f"{w.mean():.1f}%" if len(w) else "n/a",
-          help="Average share of the short-term bonus (STI) tied to ESG. Capped 0–100% to ignore data-entry errors.")
-c2.metric("Hit their ESG target (≥100%)",
-          f"{(a >= ACHIEVE_HIT).mean()*100:.0f}%" if len(a) else "n/a",
-          help="Share of company-years that met or exceeded their ESG bonus target.")
-c3.metric("Have an emission target somewhere",
-          f"{e_any.mean()*100:.0f}%" if len(e_any) else "n/a",
-          help="Share with an emission-reduction KPI in the short-term OR long-term plan.")
-c4.metric("Company-years analysed", f"{len(f)}")
-
-st.markdown(
-    f"<span style='color:{INK}'>ESG pay is real and emission targets are common. The next two questions "
-    f"ask whether the targets are a stretch, and where the climate teeth actually sit.</span>",
-    unsafe_allow_html=True)
+bad = pd.DataFrame()
+if master is not None:
+    j = f.merge(master["tsr_lookup"], left_on=["company", "year"], right_on=["name", "year"], how="left")
+    bad = j[(j["achievement"] >= ACHIEVE_HIT) & (j["tsr"] < 0)].copy()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SECTION 2 — PUNCH 1: ARE THE TARGETS TOO EASY?
+# HERO — the one punch (always visible)
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown("---")
-st.markdown("### Punch 1 — Are the targets too easy?")
-st.markdown(
-    "*If a big slice of the bonus rides on ESG but the target is hit almost every time, the ESG "
-    "component looks less like a stretch goal and more like a reliable payout.*")
+st.markdown('## German boards almost never miss their "green" pay targets')
 
-scat = f.dropna(subset=["esg_weight", "achievement"])
-if not scat.empty:
-    fig = px.scatter(
-        scat, x="esg_weight", y="achievement",
-        color="index", hover_name="company",
-        hover_data={"year": True, "esg_weight": ":.1f", "achievement": ":.1f"},
-        opacity=0.75, template="plotly_white",
-        labels={"esg_weight": "ESG share of bonus (%)", "achievement": "Target achievement (%)"},
-    )
-    fig.update_traces(marker=dict(size=10, line=dict(width=0.5, color="white")))
-    fig.add_hline(y=ACHIEVE_HIT, line_dash="dash", line_color=DANGER,
-                  annotation_text="100% — target hit", annotation_position="top left")
-    fig.add_vrect(x0=WEIGHT_HIGH, x1=105, fillcolor=WARN, opacity=0.06, line_width=0)
-    fig.update_layout(xaxis_range=[-3, 105], yaxis_range=[-10, 250],
-                      legend_title_text="Index", margin=dict(l=40, r=20, t=20, b=40), height=460)
-    st.plotly_chart(fig, use_container_width=True)
-
-    hit = (a >= ACHIEVE_HIT).mean() * 100 if len(a) else 0
-    st.markdown(
-        f"**Takeaway:** {hit:.0f}% of company-years met or beat their ESG target "
-        f"(median {a.median():.0f}%). A genuine stretch goal would not be hit this reliably. "
-        f"*(Caveat: bonuses overshoot in general; the strongest test compares ESG achievement against "
-        f"the same firm's financial-target achievement, which needs a second data source.)*")
+h1, h2, h3 = st.columns(3)
+h1.metric("Median ESG-target achievement", f"{median_ach:.0f}%" if len(a) else "n/a",
+          help="100% = exactly on target. Above 100% = beat the target.")
+h2.metric("Hit or beat their ESG target", f"{hit_rate:.0f}%" if len(a) else "n/a")
+if not bad.empty:
+    h3.metric("Cashed in full while shareholders LOST money", f"{len(bad)} firms")
 else:
-    st.info("Not enough weight/achievement data under current filters.")
+    h3.metric("Have an emission target somewhere", f"{e_any.mean()*100:.0f}%" if len(e_any) else "n/a")
+
+if not bad.empty:
+    worst = bad.sort_values("tsr").head(3)
+    names = ", ".join(f"{r['company']} ({r['tsr']*100:.0f}%)" for _, r in worst.iterrows())
+    st.markdown(
+        f"A genuine stretch goal would not be hit this reliably. And the green bonus pays out even when "
+        f"shareholders suffer — **{len(bad)} companies hit their ESG target in a year their shareholders "
+        f"lost money** (worst: {names}).")
+else:
+    st.markdown(
+        "A genuine stretch goal would not be hit this reliably. The tabs below show where the climate teeth "
+        "sit and which companies warrant a closer look.")
+
+st.caption("Screening signal, not a verdict — we flag packages worth scrutinising, we do not prove greenwashing. "
+           "'Pays out when shareholders lose' means decoupled from shareholder value, not that the target was fake.")
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SECTION 3 — PUNCH 2: WHERE ARE THE CLIMATE TEETH?
+# TABS — depth on demand
 # ──────────────────────────────────────────────────────────────────────────────
-st.markdown("---")
-st.markdown("### Punch 2 — Where are the climate teeth?")
-st.markdown(
-    "*Emission targets exist, but mostly in LONG-TERM pay. The ANNUAL bonus's 'ESG' leans on softer "
-    "social and governance criteria. So the money paid out each year is largely not about emissions.*")
+tab_break, tab_who, tab_fluke = st.tabs(
+    ["📊 The breakdown", "🔍 Which companies", "🧪 Is it a fluke?"])
 
-colA, colB = st.columns([3, 2])
+# ---- TAB 1: THE BREAKDOWN (Punch 1 + Punch 2) ----
+with tab_break:
+    st.markdown("#### Are the targets too easy?")
+    st.markdown(
+        "*If a big slice of the bonus rides on ESG but the target is hit almost every time, the ESG "
+        "component looks less like a stretch goal and more like a reliable payout.*")
 
-with colA:
+    scat = f.dropna(subset=["esg_weight", "achievement"])
+    if not scat.empty:
+        fig = px.scatter(
+            scat, x="esg_weight", y="achievement",
+            color="index", hover_name="company",
+            hover_data={"year": True, "esg_weight": ":.1f", "achievement": ":.1f"},
+            opacity=0.75, template="plotly_white",
+            labels={"esg_weight": "ESG share of bonus (%)", "achievement": "Target achievement (%)"},
+        )
+        fig.update_traces(marker=dict(size=10, line=dict(width=0.5, color="white")))
+        fig.add_hline(y=ACHIEVE_HIT, line_dash="dash", line_color=DANGER,
+                      annotation_text="100% — target hit", annotation_position="top left")
+        fig.add_vrect(x0=WEIGHT_HIGH, x1=105, fillcolor=WARN, opacity=0.06, line_width=0)
+        fig.update_layout(xaxis_range=[-3, 105], yaxis_range=[-10, 250],
+                          legend_title_text="Index", margin=dict(l=40, r=20, t=20, b=40), height=460)
+        st.plotly_chart(fig, use_container_width=True)
+        st.markdown(
+            f"**Takeaway:** {hit_rate:.0f}% of company-years met or beat their ESG target "
+            f"(median {median_ach:.0f}%). *(Caveat: bonuses overshoot in general; the strongest test compares "
+            f"ESG achievement against the same firm's financial-target achievement, which needs a second source.)*")
+    else:
+        st.info("Not enough weight/achievement data under current filters.")
+
+    st.markdown("---")
+    st.markdown("#### Where are the climate teeth?")
+    st.markdown(
+        "*Emission targets exist, but mostly in LONG-TERM pay. The ANNUAL bonus's 'ESG' leans on softer "
+        "social and governance criteria.*")
+
     sti = f["emission_sti"].dropna().mean() * 100 if f["emission_sti"].notna().any() else 0
     lti = f["emission_lti"].dropna().mean() * 100 if f["emission_lti"].notna().any() else 0
     place = pd.DataFrame({"Plan": ["Annual bonus (STI)", "Long-term plan (LTI)"], "Share": [round(sti), round(lti)]})
@@ -272,96 +280,80 @@ with colA:
                      margin=dict(l=10, r=30, t=10, b=30), height=200, showlegend=False)
     st.markdown("**Inside the annual bonus, 'ESG' is mostly social, not environmental**")
     st.plotly_chart(b2, use_container_width=True)
+    st.caption(
+        f"Only {sti:.0f}% put an emission target in the annual bonus, while {lti:.0f}% keep it in the "
+        f"long-term plan. Climate goals are real but deferred.")
 
-with colB:
-    st.markdown(f"#### {sti:.0f}% vs {lti:.0f}%")
+# ---- TAB 2: WHICH COMPANIES (screening + reality table) ----
+with tab_who:
+    st.markdown("#### Heavy ESG marketing, soft ESG substance?")
     st.markdown(
-        f"Only **{sti:.0f}%** put an emission target in the **annual** bonus, while **{lti:.0f}%** keep it "
-        f"in the **long-term** plan. \n\nClimate goals are real but deferred. The cash rewarded each year "
-        f"is mostly tied to softer criteria.")
+        "*One point each for: high ESG weight, target hit, and no emission target anywhere. "
+        "A higher score is a signal worth a closer look, not proof of greenwashing.*")
 
-# ──────────────────────────────────────────────────────────────────────────────
-# SECTION 4 — SCREENING SCORE
-# ──────────────────────────────────────────────────────────────────────────────
-st.markdown("---")
-st.markdown("### The screening score: heavy ESG marketing, soft ESG substance?")
-st.markdown(
-    "*One point each for: high ESG weight, target hit, and no emission target anywhere (STI or LTI). "
-    "A higher score is not proof of greenwashing — it is a signal worth a closer look.*")
+    s = f.copy()
+    s["f_high_weight"] = (s["esg_weight"] >= WEIGHT_HIGH).astype("Int64")
+    s["f_target_hit"]  = (s["achievement"] >= ACHIEVE_HIT).astype("Int64")
+    s["f_no_emission"] = (s["emission_any"] == 0).astype("Int64")
+    s["Screening score (0–3)"] = s[["f_high_weight", "f_target_hit", "f_no_emission"]].sum(axis=1, min_count=1)
+    table = (s.sort_values(["Screening score (0–3)", "esg_weight"], ascending=[False, False])
+               .assign(**{
+                   "ESG weight %": s["esg_weight"].round(1),
+                   "Achievement %": s["achievement"].round(0),
+                   "Emission KPI (any)": s["emission_any"].map({1: "Yes", 0: "No"}),
+               })
+               [["company", "year", "index", "ESG weight %", "Achievement %", "Emission KPI (any)", "Screening score (0–3)"]]
+               .rename(columns={"company": "Company", "year": "Year", "index": "Index"}))
+    st.dataframe(table, use_container_width=True, hide_index=True)
 
-s = f.copy()
-s["f_high_weight"] = (s["esg_weight"] >= WEIGHT_HIGH).astype("Int64")
-s["f_target_hit"]  = (s["achievement"] >= ACHIEVE_HIT).astype("Int64")
-s["f_no_emission"] = (s["emission_any"] == 0).astype("Int64")
-s["Screening score (0–3)"] = s[["f_high_weight", "f_target_hit", "f_no_emission"]].sum(axis=1, min_count=1)
-
-table = (s.sort_values(["Screening score (0–3)", "esg_weight"], ascending=[False, False])
-           .assign(**{
-               "ESG weight %": s["esg_weight"].round(1),
-               "Achievement %": s["achievement"].round(0),
-               "Emission KPI (any)": s["emission_any"].map({1: "Yes", 0: "No"}),
-           })
-           [["company", "year", "index", "ESG weight %", "Achievement %", "Emission KPI (any)", "Screening score (0–3)"]]
-           .rename(columns={"company": "Company", "year": "Year", "index": "Index"}))
-
-st.dataframe(table, use_container_width=True, hide_index=True)
-
-# ──────────────────────────────────────────────────────────────────────────────
-# SECTION 5 — REALITY CHECK: IS IT A FLUKE?
-# ──────────────────────────────────────────────────────────────────────────────
-if master is not None:
-    st.markdown("---")
-    st.markdown("### Reality check: is this just a fluke of 2023–2024?")
-    st.markdown(
-        "*Two checks against the master database. Shareholder-return data only covers 2022–2024 "
-        "(a down market year plus two up years)*")
-
-    r1, r2 = st.columns(2)
-
-    with r1:
-        ta = master["test_a"]
-        ta = ta[(ta["year"] >= 2008) & (ta["year"] <= 2024)].copy()
-        ta["median_tsr_pct"] = (ta["median_tsr"] * 100).round(0)
-        figA = px.bar(ta, x="year", y="median_tsr_pct", template="plotly_white",
-                      labels={"median_tsr_pct": "Median shareholder return (%)", "year": "Year"})
-        figA.update_traces(marker_color=[DANGER if v < 0 else ACCENT for v in ta["median_tsr_pct"]])
-        figA.add_hline(y=0, line_color="#888")
-        figA.update_layout(margin=dict(l=10, r=10, t=10, b=30), height=260, showlegend=False)
-        st.markdown("**Test A — the market was UP in 2023–2024**")
-        st.plotly_chart(figA, use_container_width=True)
-        st.caption("2023 (+23%) and 2024 (+13%) were good market years — matching the actual DAX total return "
-                   "(+20% and +18%) — so firms paying full ESG bonuses while their shareholders lost 20–30% "
-                   "were genuine underperformers, not crash victims. Covers ~40 large-cap firms per year.")
-
-    with r2:
-        tb = master["test_b"].set_index("neg")
-        pct_neg = tb.loc[True, "pct_bonus"] if True in tb.index else float("nan")
-        mb_pos = tb.loc[False, "median_bonus"] if False in tb.index else float("nan")
-        mb_neg = tb.loc[True, "median_bonus"] if True in tb.index else float("nan")
-        drop = (1 - mb_neg / mb_pos) * 100 if mb_pos else float("nan")
-        st.markdown("**Test B — in 2022–2024 (one down year + two up years)**")
-        m1, m2 = st.columns(2)
-        m1.metric("Still got a bonus when shareholders LOST money", f"{pct_neg:.0f}%")
-        m2.metric("How much the bonus dropped in those years", f"−{drop:.0f}%")
-        st.caption("Across 2022–2024 (a down market year plus two up years), most executives still kept a "
-                   "substantial bonus when shareholders lost money; the bonus dropped only about a third. "
-                   "Performance data exists only for these three years, so this is a short-window check, "
-                   )
-
-    j = f.merge(master["tsr_lookup"], left_on=["company", "year"], right_on=["name", "year"], how="left")
-    bad = j[(j["achievement"] >= ACHIEVE_HIT) & (j["tsr"] < 0)].copy()
     if not bad.empty:
-        bad["Achievement %"] = bad["achievement"].round(0)
-        bad["Shareholder return %"] = (bad["tsr"] * 100).round(0)
-        bad = (bad.sort_values("tsr")[["company", "year", "Achievement %", "Shareholder return %"]]
-                  .rename(columns={"company": "Company", "year": "Year"}))
-        st.markdown(f"**{len(bad)} companies hit their ESG bonus target in a year their shareholders lost money:**")
-        st.dataframe(bad, use_container_width=True, hide_index=True)
-        st.caption("Honest scope: this shows the ESG bonus paid out despite shareholder losses (decoupling from "
-                   "shareholder value). It is NOT proof the ESG target was easy — ESG outcomes and stock returns "
-                   "differ. Matched to the master DB for the ~57% of firms whose names align.")
+        bt = bad.copy()
+        bt["Achievement %"] = bt["achievement"].round(0)
+        bt["Shareholder return %"] = (bt["tsr"] * 100).round(0)
+        bt = (bt.sort_values("tsr")[["company", "year", "Achievement %", "Shareholder return %"]]
+                .rename(columns={"company": "Company", "year": "Year"}))
+        st.markdown("---")
+        st.markdown(f"**{len(bt)} companies hit their ESG bonus target in a year their shareholders lost money:**")
+        st.dataframe(bt, use_container_width=True, hide_index=True)
+        st.caption("Decoupling from shareholder value — NOT proof the ESG target was easy (ESG outcomes and "
+                   "stock returns differ). Matched to the master DB for the ~57% of firms whose names align.")
+
+# ---- TAB 3: IS IT A FLUKE? (Test A + Test B) ----
+with tab_fluke:
+    if master is None:
+        st.info("Master database not found — robustness checks need 2008-2024_longitudinal.csv. "
+                "Edit MASTER_DB_CANDIDATES at the top of the script.")
     else:
-        st.info("No 'hit ESG target but negative shareholder return' rows under the current filters.")
+        st.markdown(
+            "*Two checks against the master database. Shareholder-return data covers 2022–2024 "
+            "(one down market year, two up), so this is a short-window check, not an 18-year claim.*")
+        r1, r2 = st.columns(2)
+        with r1:
+            ta = master["test_a"]
+            ta = ta[(ta["year"] >= 2008) & (ta["year"] <= 2024)].copy()
+            ta["median_tsr_pct"] = (ta["median_tsr"] * 100).round(0)
+            figA = px.bar(ta, x="year", y="median_tsr_pct", template="plotly_white",
+                          labels={"median_tsr_pct": "Median shareholder return (%)", "year": "Year"})
+            figA.update_traces(marker_color=[DANGER if v < 0 else ACCENT for v in ta["median_tsr_pct"]])
+            figA.add_hline(y=0, line_color="#888")
+            figA.update_layout(margin=dict(l=10, r=10, t=10, b=30), height=260, showlegend=False)
+            st.markdown("**Test A — the market was UP in 2023–2024**")
+            st.plotly_chart(figA, use_container_width=True)
+            st.caption("2023 (+23%) and 2024 (+13%) were good market years — matching the actual DAX total return "
+                       "(+20% and +18%) — so firms paying full ESG bonuses while their shareholders lost 20–30% "
+                       "were genuine underperformers, not crash victims. ~40 large-cap firms per year.")
+        with r2:
+            tb = master["test_b"].set_index("neg")
+            pct_neg = tb.loc[True, "pct_bonus"] if True in tb.index else float("nan")
+            mb_pos = tb.loc[False, "median_bonus"] if False in tb.index else float("nan")
+            mb_neg = tb.loc[True, "median_bonus"] if True in tb.index else float("nan")
+            drop = (1 - mb_neg / mb_pos) * 100 if mb_pos else float("nan")
+            st.markdown("**Test B — in 2022–2024 (one down year + two up years)**")
+            m1, m2 = st.columns(2)
+            m1.metric("Still got a bonus when shareholders LOST money", f"{pct_neg:.0f}%")
+            m2.metric("How much the bonus dropped in those years", f"−{drop:.0f}%")
+            st.caption("Most executives kept a substantial bonus even when shareholders lost money; the bonus "
+                       "dropped only about a third. Three-year window, not an 18-year structural claim.")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # METHODOLOGY + CAVEATS
@@ -370,6 +362,10 @@ with st.expander("Methodology & caveats (read before quoting a number)"):
     st.markdown(
         f"""
 - **Data:** DSW ESG remuneration data, reporting years 2023–2024. N = {len(df)} company-years.
+- **Sample balance:** the data is 2023-weighted (88 company-years vs 40 in 2024; no 2022 in the dashboard). The
+  headline finding is robust to this: median ESG-target achievement is 119% in 2023 and 118% in 2024, with hit
+  rates of 71% vs 76%. The emission-target rate is the exception, rising from 64% (2023) to 95% (2024), so quote
+  that figure by year rather than pooled.
 - **Bug fixed:** `STI_total_ESG_Share` held a 16,663,333 data-entry error; it is now capped 0–100%,
   so the average ESG weight is no longer distorted.
 - **Emission measured honestly across STI and LTI.** Quoting only the short-term bonus would undercount,
@@ -379,7 +375,7 @@ with st.expander("Methodology & caveats (read before quoting a number)"):
 - **Strongest open follow-up:** compare ESG-target achievement against the firm's own FINANCIAL-target
   achievement. This file has no financial Zielerreichung, so that needs a second source.
 - **STI vs LTI scope:** composition charts describe the annual (STI) bonus; emission presence uses STI or LTI.
-- **Robustness (Section 5):** the master database's shareholder-return data only covers 2022–2024, so the
+- **Robustness (fluke tab):** the master database's shareholder-return data only covers 2022–2024, so the
   robustness window is three years (one down market year, two up), not 18. Our per-year medians (2022 −8%,
   2023 +23%, 2024 +13%) match the actual DAX total returns (−13%, +20%, +18%), confirming the year labels are
   correct. Performance covers ~40 large-cap firms per year (TSR is per company, deduplicated from per-exec
